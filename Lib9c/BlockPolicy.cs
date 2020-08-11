@@ -50,6 +50,7 @@ namespace Nekoyume.BlockChain
         public static IBlockPolicy<PolymorphicAction<ActionBase>> GetPolicy(int minimumDifficulty)
         {
             ActivatedAccounts = ActivatedAccounts?.Clear();
+            return new DebugPolicy();
 #if UNITY_EDITOR
             return new DebugPolicy();
 #else

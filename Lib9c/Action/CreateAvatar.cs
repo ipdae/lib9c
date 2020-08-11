@@ -10,6 +10,7 @@ using Bencodex.Types;
 using Libplanet;
 using Libplanet.Action;
 using Nekoyume.Model.Item;
+using Nekoyume.Model.Stat;
 using Nekoyume.Model.State;
 using Nekoyume.TableData;
 using Serilog;
@@ -102,6 +103,7 @@ namespace Nekoyume.Action
             {
                 return LogError(context, "Aborted as the signer already has an avatar at index #{Index}.", index);
             }
+
             sw.Stop();
             Log.Debug("CreateAvatar Get AgentAvatarStates: {Elapsed}", sw.Elapsed);
             sw.Restart();
@@ -162,10 +164,7 @@ namespace Nekoyume.Action
                 name
             );
 
-            if (GameConfig.IsEditor)
-            {
-                AddItemsForTest(avatarState, ctx.Random, tableSheets);
-            }
+            AddItemsForTest(avatarState, ctx.Random, tableSheets);
 
             return avatarState;
         }
@@ -179,14 +178,44 @@ namespace Nekoyume.Action
 
             foreach (var row in tableSheets.MaterialItemSheet)
             {
-                avatarState.inventory.AddItem(ItemFactory.CreateMaterial(row), 10);
+                avatarState.inventory.AddItem(ItemFactory.CreateMaterial(row), 9999);
             }
 
-            foreach (var pair in tableSheets.EquipmentItemSheet.Where(pair =>
-                pair.Value.Id > GameConfig.DefaultAvatarWeaponId))
+            foreach (var row in tableSheets.EquipmentItemRecipeSheet.Values)
             {
-                var itemId = random.GenerateRandomGuid();
-                avatarState.inventory.AddItem(ItemFactory.CreateItemUsable(pair.Value, itemId, default));
+                var equipmentRow = tableSheets.EquipmentItemSheet.Values.First(r => r.Id == row.ResultEquipmentId);
+                //서브레시피 아이디가 없는 경우엔 옵션(스킬, 스탯)이 없는 케이스라 미리 만들어두지 않음
+                if (row.SubRecipeIds.Any())
+                {
+                    var subRecipes =
+                        tableSheets.EquipmentItemSubRecipeSheet.Values.Where(r => row.SubRecipeIds.Contains(r.Id));
+                    foreach (var subRecipe in subRecipes)
+                    {
+                        var itemId = random.GenerateRandomGuid();
+                        var equipment = ItemFactory.CreateItemUsable(equipmentRow, itemId, default);
+                        var optionIds = subRecipe.Options.Select(r => r.Id);
+                        var optionRows =
+                            tableSheets.EquipmentItemOptionSheet.Values.Where(r => optionIds.Contains(r.Id));
+                        foreach (var optionRow in optionRows)
+                        {
+                            if (optionRow.StatType != StatType.NONE)
+                            {
+                                var statMap = CombinationEquipment.GetStat(optionRow, random);
+                                equipment.StatsMap.AddStatAdditionalValue(statMap.StatType, statMap.Value);
+                            }
+                            else
+                            {
+                                var skill = CombinationEquipment.GetSkill(optionRow, tableSheets, random);
+                                if (!(skill is null))
+                                {
+                                    equipment.Skills.Add(skill);
+                                }
+                            }
+                        }
+
+                        avatarState.inventory.AddItem(equipment);
+                    }
+                }
             }
         }
     }
